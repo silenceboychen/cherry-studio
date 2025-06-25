@@ -126,8 +126,9 @@ const McpSettings: React.FC = () => {
         }
 
         // Check if the registryUrl is a custom URL (not in the predefined list)
-        const isCustomRegistry = currentRegistry.length > 0 &&
-          !currentRegistry.some(reg => reg.url === server.registryUrl) &&
+        const isCustomRegistry =
+          currentRegistry.length > 0 &&
+          !currentRegistry.some((reg) => reg.url === server.registryUrl) &&
           server.registryUrl !== '' // empty string is default
 
         if (isCustomRegistry) {
@@ -546,7 +547,10 @@ const McpSettings: React.FC = () => {
                   </Radio.Group>
                   {selectedRegistryType === 'custom' && (
                     <Input
-                      placeholder={t('settings.mcp.customRegistryPlaceholder', '请输入私有仓库地址，如: https://npm.company.com')}
+                      placeholder={t(
+                        'settings.mcp.customRegistryPlaceholder',
+                        '请输入私有仓库地址，如: https://npm.company.com'
+                      )}
                       value={customRegistryUrl}
                       onChange={(e) => onCustomRegistryChange(e.target.value)}
                       style={{ marginTop: 8 }}
