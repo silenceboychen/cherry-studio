@@ -17,6 +17,7 @@ import {
 } from '@renderer/types'
 import type { MCPToolCompleteChunk, MCPToolInProgressChunk, MCPToolPendingChunk } from '@renderer/types/chunk'
 import { ChunkType } from '@renderer/types/chunk'
+import { AwsBedrockSdkMessageParam } from '@renderer/types/sdk'
 import { isArray, isObject, pull, transform } from 'lodash'
 import { nanoid } from 'nanoid'
 import OpenAI from 'openai'
@@ -806,6 +807,73 @@ export function mcpToolCallResponseToGeminiMessage(
       })
     }
     message.parts = parts
+  }
+
+  return message
+}
+
+export function mcpToolCallResponseToAwsBedrockMessage(
+  mcpToolResponse: MCPToolResponse,
+  resp: MCPCallToolResponse,
+  model: Model
+): AwsBedrockSdkMessageParam {
+  const message: AwsBedrockSdkMessageParam = {
+    role: 'user',
+    content: []
+  }
+
+  if (resp.isError) {
+    message.content = [
+      {
+        text: JSON.stringify(resp.content)
+      }
+    ]
+  } else {
+    const content: Array<{ text: string }> = [
+      {
+        text: `Here is the result of mcp tool use \`${mcpToolResponse.tool.name}\`:`
+      }
+    ]
+
+    if (isVisionModel(model)) {
+      for (const item of resp.content) {
+        switch (item.type) {
+          case 'text':
+            content.push({
+              text: item.text || 'no content'
+            })
+            break
+          case 'image':
+            if (
+              item.mimeType === 'image/png' ||
+              item.mimeType === 'image/jpeg' ||
+              item.mimeType === 'image/webp' ||
+              item.mimeType === 'image/gif'
+            ) {
+              // AWS Bedrock doesn't support direct image embedding in tool results
+              // Convert image to text description
+              content.push({
+                text: `[Image received: ${item.mimeType}, size: ${item.data?.length || 0} bytes]`
+              })
+            } else {
+              content.push({
+                text: `Unsupported image type: ${item.mimeType}`
+              })
+            }
+            break
+          default:
+            content.push({
+              text: `Unsupported type: ${item.type}`
+            })
+            break
+        }
+      }
+    } else {
+      content.push({
+        text: JSON.stringify(resp.content)
+      })
+    }
+    message.content = content
   }
 
   return message

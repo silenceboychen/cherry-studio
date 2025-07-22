@@ -53,8 +53,14 @@ const ProviderSetting: FC<Props> = ({ providerId }) => {
   const { theme } = useTheme()
 
   const isAzureOpenAI = provider.id === 'azure-openai' || provider.type === 'azure-openai'
+  const isAwsBedrock = provider.id === 'aws-bedrock' || provider.type === 'aws-bedrock'
 
   const isDmxapi = provider.id === 'dmxapi'
+
+  // AWS Bedrock specific state
+  const [awsAccessKeyId, setAwsAccessKeyId] = useState(provider.extra_headers?.['AWS-Access-Key-ID'] || '')
+  const [awsSecretAccessKey, setAwsSecretAccessKey] = useState(provider.extra_headers?.['AWS-Secret-Access-Key'] || '')
+  const [awsRegion, setAwsRegion] = useState(provider.extra_headers?.['AWS-Region'] || '')
 
   const providerConfig = PROVIDER_CONFIG[provider.id]
   const officialWebsite = providerConfig?.websites?.official
@@ -68,6 +74,34 @@ const ProviderSetting: FC<Props> = ({ providerId }) => {
     status: HealthStatus.NOT_CHECKED,
     checking: false
   })
+
+  // AWS Bedrock update functions
+  const onUpdateAwsAccessKeyId = () => {
+    updateProvider({
+      extra_headers: {
+        ...provider.extra_headers,
+        'AWS-Access-Key-ID': awsAccessKeyId
+      }
+    })
+  }
+
+  const onUpdateAwsSecretAccessKey = () => {
+    updateProvider({
+      extra_headers: {
+        ...provider.extra_headers,
+        'AWS-Secret-Access-Key': awsSecretAccessKey
+      }
+    })
+  }
+
+  const onUpdateAwsRegion = () => {
+    updateProvider({
+      extra_headers: {
+        ...provider.extra_headers,
+        'AWS-Region': awsRegion
+      }
+    })
+  }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const debouncedUpdateApiKey = useCallback(
@@ -83,6 +117,15 @@ const ProviderSetting: FC<Props> = ({ providerId }) => {
     setLocalApiKey(provider.apiKey)
     setApiKeyConnectivity({ status: HealthStatus.NOT_CHECKED })
   }, [provider.apiKey])
+
+  // 同步AWS配置状态
+  useEffect(() => {
+    if (isAwsBedrock) {
+      setAwsAccessKeyId(provider.extra_headers?.['AWS-Access-Key-ID'] || '')
+      setAwsSecretAccessKey(provider.extra_headers?.['AWS-Secret-Access-Key'] || '')
+      setAwsRegion(provider.extra_headers?.['AWS-Region'] || '')
+    }
+  }, [provider.extra_headers, isAwsBedrock])
 
   // 同步 localApiKey 到 provider.apiKey（防抖）
   useEffect(() => {
@@ -259,7 +302,38 @@ const ProviderSetting: FC<Props> = ({ providerId }) => {
       {isProviderSupportAuth(provider) && <ProviderOAuth providerId={provider.id} />}
       {provider.id === 'openai' && <OpenAIAlert />}
       {isDmxapi && <DMXAPISettings providerId={provider.id} />}
-      {provider.id !== 'vertexai' && (
+      {isAwsBedrock && (
+        <>
+          <SettingSubtitle>{t('settings.provider.aws.access_key_id')}</SettingSubtitle>
+          <Space.Compact style={{ width: '100%', marginTop: 5 }}>
+            <Input
+              value={awsAccessKeyId}
+              placeholder={t('settings.provider.aws.access_key_id_placeholder')}
+              onChange={(e) => setAwsAccessKeyId(e.target.value)}
+              onBlur={onUpdateAwsAccessKeyId}
+            />
+          </Space.Compact>
+          <SettingSubtitle>{t('settings.provider.aws.secret_access_key')}</SettingSubtitle>
+          <Space.Compact style={{ width: '100%', marginTop: 5 }}>
+            <Input.Password
+              value={awsSecretAccessKey}
+              placeholder={t('settings.provider.aws.secret_access_key_placeholder')}
+              onChange={(e) => setAwsSecretAccessKey(e.target.value)}
+              onBlur={onUpdateAwsSecretAccessKey}
+            />
+          </Space.Compact>
+          <SettingSubtitle>{t('settings.provider.aws.region')}</SettingSubtitle>
+          <Space.Compact style={{ width: '100%', marginTop: 5 }}>
+            <Input
+              value={awsRegion}
+              placeholder={t('settings.provider.aws.region_placeholder')}
+              onChange={(e) => setAwsRegion(e.target.value)}
+              onBlur={onUpdateAwsRegion}
+            />
+          </Space.Compact>
+        </>
+      )}
+      {provider.id !== 'vertexai' && !isAwsBedrock && (
         <>
           <SettingSubtitle
             style={{

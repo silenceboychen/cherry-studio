@@ -537,6 +537,21 @@ export const INITIAL_PROVIDERS: Provider[] = [
     models: SYSTEM_MODELS.voyageai,
     isSystem: true,
     enabled: false
+  },
+  {
+    id: 'aws-bedrock',
+    name: 'AWS Bedrock',
+    type: 'aws-bedrock',
+    apiKey: '',
+    apiHost: '',
+    models: SYSTEM_MODELS['aws-bedrock'],
+    isSystem: true,
+    enabled: false,
+    extra_headers: {
+      'AWS-Access-Key-ID': '',
+      'AWS-Secret-Access-Key': '',
+      'AWS-Region': ''
+    }
   }
 ]
 
