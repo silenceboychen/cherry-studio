@@ -22,6 +22,11 @@ type LlmSettings = {
     projectId: string
     location: string
   }
+  awsBedrock: {
+    accessKeyId: string
+    secretAccessKey: string
+    region: string
+  }
 }
 
 export interface LlmState {
@@ -578,6 +583,11 @@ export const initialState: LlmState = {
       },
       projectId: '',
       location: ''
+    },
+    awsBedrock: {
+      accessKeyId: '',
+      secretAccessKey: '',
+      region: ''
     }
   }
 }
@@ -702,6 +712,15 @@ const llmSlice = createSlice({
     setVertexAIServiceAccountClientEmail: (state, action: PayloadAction<string>) => {
       state.settings.vertexai.serviceAccount.clientEmail = action.payload
     },
+    setAwsBedrockAccessKeyId: (state, action: PayloadAction<string>) => {
+      state.settings.awsBedrock.accessKeyId = action.payload
+    },
+    setAwsBedrockSecretAccessKey: (state, action: PayloadAction<string>) => {
+      state.settings.awsBedrock.secretAccessKey = action.payload
+    },
+    setAwsBedrockRegion: (state, action: PayloadAction<string>) => {
+      state.settings.awsBedrock.region = action.payload
+    },
     updateModel: (
       state,
       action: PayloadAction<{
@@ -738,6 +757,9 @@ export const {
   setVertexAILocation,
   setVertexAIServiceAccountPrivateKey,
   setVertexAIServiceAccountClientEmail,
+  setAwsBedrockAccessKeyId,
+  setAwsBedrockSecretAccessKey,
+  setAwsBedrockRegion,
   updateModel
 } = llmSlice.actions
 
