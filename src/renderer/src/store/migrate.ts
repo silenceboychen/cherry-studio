@@ -1845,7 +1845,7 @@ const migrateConfig = {
       return state
     }
   },
-  '122': (state: RootState) => {
+  '123': (state: RootState) => {
     try {
       addProvider(state, 'aws-bedrock')
 
@@ -1856,7 +1856,7 @@ const migrateConfig = {
 
       return state
     } catch (error) {
-      logger.error('migrate 122 error', error)
+      logger.error('migrate 123 error', error as Error)
       return state
     }
   }

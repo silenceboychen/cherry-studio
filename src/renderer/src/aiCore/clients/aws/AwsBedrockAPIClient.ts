@@ -144,7 +144,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
         return { output: response }
       }
     } catch (error) {
-      logger.error('Failed to create completions with AWS Bedrock:', error)
+      logger.error('Failed to create completions with AWS Bedrock:', error as Error)
       throw error
     }
   }
@@ -178,7 +178,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
         }
       }
     } catch (error) {
-      logger.error('Error in AWS Bedrock stream iterator:', error)
+      logger.error('Error in AWS Bedrock stream iterator:', error as Error)
       throw error
     }
   }
@@ -309,7 +309,6 @@ export class AwsBedrockAPIClient extends BaseApiClient<
           if (rawChunk.contentBlockDelta?.delta?.toolUse?.input) {
             const inputDelta = rawChunk.contentBlockDelta.delta.toolUse.input
             accumulatedJson += inputDelta
-            logger.debug('Tool input delta:', inputDelta)
           }
 
           // 处理文本增量
@@ -325,8 +324,6 @@ export class AwsBedrockAPIClient extends BaseApiClient<
               type: ChunkType.TEXT_DELTA,
               text: rawChunk.contentBlockDelta.delta.text
             } as TextDeltaChunk)
-
-            logger.debug('Text delta:', rawChunk.contentBlockDelta.delta.text)
           }
 
           // 处理内容块停止事件 - 参考 Anthropic 的 content_block_stop 处理
@@ -336,22 +333,19 @@ export class AwsBedrockAPIClient extends BaseApiClient<
             if (toolCall && accumulatedJson) {
               try {
                 toolCall.input = JSON.parse(accumulatedJson)
-                logger.debug('Tool call id:', toolCall.toolUseId, 'accumulated json:', accumulatedJson)
                 controller.enqueue({
                   type: ChunkType.MCP_TOOL_CREATED,
                   tool_calls: [toolCall]
                 } as MCPToolCreatedChunk)
                 accumulatedJson = ''
               } catch (error) {
-                logger.error('Error parsing tool call input:', error)
+                logger.error('Error parsing tool call input:', error as Error)
               }
             }
           }
 
           // 处理消息结束事件
           if (rawChunk.messageStop) {
-            logger.debug('Message stopped, metadata:', rawChunk.metadata)
-
             // 从metadata中提取usage信息
             const usage = rawChunk.metadata?.usage || {}
 
