@@ -2239,7 +2239,7 @@
         "api_key": "API Key",
         "api_key.tip": "Multiple keys separated by commas or spaces",
         "api_version": "API Version",
-        "aws": {
+        "aws-bedrock": {
           "access_key_id": "AWS Access Key ID",
           "access_key_id_help": "Your AWS Access Key ID for accessing AWS Bedrock services",
           "access_key_id_placeholder": "AKIAIOSFODNN7EXAMPLE",

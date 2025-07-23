@@ -224,7 +224,7 @@ export interface AwsBedrockSdkTool {
 }
 
 export interface AwsBedrockSdkToolCall {
-  id: string // 与 toolUseId 相同，用于与其他 SdkToolCall 类型保持一致
+  id: string
   name: string
   input: any
   toolUseId: string

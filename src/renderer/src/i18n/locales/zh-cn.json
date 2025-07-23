@@ -2239,7 +2239,7 @@
         "api_key": "API 密钥",
         "api_key.tip": "多个密钥使用逗号或空格分隔",
         "api_version": "API 版本",
-        "aws": {
+        "aws-bedrock": {
           "access_key_id": "AWS Access Key ID",
           "access_key_id_help": "您的 AWS Access Key ID，用于访问 AWS Bedrock 服务",
           "access_key_id_placeholder": "AKIAIOSFODNN7EXAMPLE",

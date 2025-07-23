@@ -1,17 +1,13 @@
 import { HStack } from '@renderer/components/Layout'
 import { PROVIDER_CONFIG } from '@renderer/config/providers'
-import { syncAwsBedrockSettingsToProvider, useAwsBedrockSettings } from '@renderer/hooks/useAwsBedrock'
+import { useAwsBedrockSettings } from '@renderer/hooks/useAwsBedrock'
 import { Alert, Input } from 'antd'
-import { FC, useEffect, useState } from 'react'
+import { FC, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SettingHelpLink, SettingHelpText, SettingHelpTextRow, SettingSubtitle } from '..'
 
-interface Props {
-  providerId?: string
-}
-
-const AwsBedrockSettings: FC<Props> = ({ providerId = 'aws-bedrock' }) => {
+const AwsBedrockSettings: FC = () => {
   const { t } = useTranslation()
   const { accessKeyId, secretAccessKey, region, setAccessKeyId, setSecretAccessKey, setRegion } =
     useAwsBedrockSettings()
@@ -22,11 +18,6 @@ const AwsBedrockSettings: FC<Props> = ({ providerId = 'aws-bedrock' }) => {
   const [localAccessKeyId, setLocalAccessKeyId] = useState(accessKeyId)
   const [localSecretAccessKey, setLocalSecretAccessKey] = useState(secretAccessKey)
   const [localRegion, setLocalRegion] = useState(region)
-
-  // 同步设置到provider的extra_headers
-  useEffect(() => {
-    syncAwsBedrockSettingsToProvider(providerId)
-  }, [accessKeyId, secretAccessKey, region, providerId])
 
   const handleAccessKeyIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setLocalAccessKeyId(e.target.value)
@@ -54,25 +45,25 @@ const AwsBedrockSettings: FC<Props> = ({ providerId = 'aws-bedrock' }) => {
 
   return (
     <>
-      <SettingSubtitle style={{ marginTop: 5 }}>{t('settings.provider.aws.title')}</SettingSubtitle>
-      <Alert type="info" style={{ marginTop: 5 }} message={t('settings.provider.aws.description')} showIcon />
+      <SettingSubtitle style={{ marginTop: 5 }}>{t('settings.provider.aws-bedrock.title')}</SettingSubtitle>
+      <Alert type="info" style={{ marginTop: 5 }} message={t('settings.provider.aws-bedrock.description')} showIcon />
 
-      <SettingSubtitle style={{ marginTop: 5 }}>{t('settings.provider.aws.access_key_id')}</SettingSubtitle>
+      <SettingSubtitle style={{ marginTop: 5 }}>{t('settings.provider.aws-bedrock.access_key_id')}</SettingSubtitle>
       <Input
         value={localAccessKeyId}
-        placeholder={t('settings.provider.aws.access_key_id_placeholder')}
+        placeholder={t('settings.provider.aws-bedrock.access_key_id_placeholder')}
         onChange={handleAccessKeyIdChange}
         onBlur={handleAccessKeyIdBlur}
         style={{ marginTop: 5 }}
       />
       <SettingHelpTextRow>
-        <SettingHelpText>{t('settings.provider.aws.access_key_id_help')}</SettingHelpText>
+        <SettingHelpText>{t('settings.provider.aws-bedrock.access_key_id_help')}</SettingHelpText>
       </SettingHelpTextRow>
 
-      <SettingSubtitle style={{ marginTop: 5 }}>{t('settings.provider.aws.secret_access_key')}</SettingSubtitle>
+      <SettingSubtitle style={{ marginTop: 5 }}>{t('settings.provider.aws-bedrock.secret_access_key')}</SettingSubtitle>
       <Input.Password
         value={localSecretAccessKey}
-        placeholder={t('settings.provider.aws.secret_access_key_placeholder')}
+        placeholder={t('settings.provider.aws-bedrock.secret_access_key_placeholder')}
         onChange={handleSecretAccessKeyChange}
         onBlur={handleSecretAccessKeyBlur}
         style={{ marginTop: 5 }}
@@ -85,20 +76,20 @@ const AwsBedrockSettings: FC<Props> = ({ providerId = 'aws-bedrock' }) => {
               {t('settings.provider.get_api_key')}
             </SettingHelpLink>
           </HStack>
-          <SettingHelpText>{t('settings.provider.aws.secret_access_key_help')}</SettingHelpText>
+          <SettingHelpText>{t('settings.provider.aws-bedrock.secret_access_key_help')}</SettingHelpText>
         </SettingHelpTextRow>
       )}
 
-      <SettingSubtitle style={{ marginTop: 5 }}>{t('settings.provider.aws.region')}</SettingSubtitle>
+      <SettingSubtitle style={{ marginTop: 5 }}>{t('settings.provider.aws-bedrock.region')}</SettingSubtitle>
       <Input
         value={localRegion}
-        placeholder={t('settings.provider.aws.region_placeholder')}
+        placeholder={t('settings.provider.aws-bedrock.region_placeholder')}
         onChange={handleRegionChange}
         onBlur={handleRegionBlur}
         style={{ marginTop: 5 }}
       />
       <SettingHelpTextRow>
-        <SettingHelpText>{t('settings.provider.aws.region_help')}</SettingHelpText>
+        <SettingHelpText>{t('settings.provider.aws-bedrock.region_help')}</SettingHelpText>
       </SettingHelpTextRow>
     </>
   )

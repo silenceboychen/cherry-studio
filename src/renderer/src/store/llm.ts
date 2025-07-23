@@ -551,12 +551,7 @@ export const INITIAL_PROVIDERS: Provider[] = [
     apiHost: '',
     models: SYSTEM_MODELS['aws-bedrock'],
     isSystem: true,
-    enabled: false,
-    extra_headers: {
-      'AWS-Access-Key-ID': '',
-      'AWS-Secret-Access-Key': '',
-      'AWS-Region': ''
-    }
+    enabled: false
   }
 ]
 

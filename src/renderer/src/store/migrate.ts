@@ -1838,14 +1838,13 @@ const migrateConfig = {
   },
   '122': (state: RootState) => {
     try {
+      addProvider(state, 'aws-bedrock')
+
       // 初始化 awsBedrock 设置
       if (!state.llm.settings.awsBedrock) {
-        state.llm.settings.awsBedrock = {
-          accessKeyId: '',
-          secretAccessKey: '',
-          region: ''
-        }
+        state.llm.settings.awsBedrock = llmInitialState.settings.awsBedrock
       }
+
       return state
     } catch (error) {
       logger.error('migrate 122 error', error)

@@ -2282,26 +2282,7 @@ export const SYSTEM_MODELS: Record<string, Model[]> = {
     }
   ],
   'new-api': [],
-  'aws-bedrock': [
-    {
-      id: 'us.anthropic.claude-opus-4-20250514-v1:0',
-      provider: 'aws-bedrock',
-      name: 'Claude Opus 4 (US)',
-      group: 'Anthropic'
-    },
-    {
-      id: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
-      provider: 'aws-bedrock',
-      name: 'Claude Sonnet 4 (US)',
-      group: 'Anthropic'
-    },
-    {
-      id: 'us.anthropic.claude-3-7-sonnet-20250219-v1:0',
-      provider: 'aws-bedrock',
-      name: 'Claude 3.7 Sonnet (US)',
-      group: 'Anthropic'
-    }
-  ]
+  'aws-bedrock': []
 }
 
 export const TEXT_TO_IMAGES_MODELS = [

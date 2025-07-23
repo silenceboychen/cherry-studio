@@ -7,6 +7,11 @@ import {
 import { loggerService } from '@logger'
 import { GenericChunk } from '@renderer/aiCore/middleware/schemas'
 import { DEFAULT_MAX_TOKENS } from '@renderer/config/constant'
+import {
+  getAwsBedrockAccessKeyId,
+  getAwsBedrockRegion,
+  getAwsBedrockSecretAccessKey
+} from '@renderer/hooks/useAwsBedrock'
 import { estimateTextTokens } from '@renderer/services/TokenService'
 import {
   GenerateImageParams,
@@ -55,9 +60,9 @@ export class AwsBedrockAPIClient extends BaseApiClient<
       return this.sdkInstance
     }
 
-    const region = this.provider.extra_headers?.['AWS-Region']
-    const accessKeyId = this.provider.extra_headers?.['AWS-Access-Key-ID']
-    const secretAccessKey = this.provider.extra_headers?.['AWS-Secret-Access-Key']
+    const region = getAwsBedrockRegion()
+    const accessKeyId = getAwsBedrockAccessKeyId()
+    const secretAccessKey = getAwsBedrockSecretAccessKey()
 
     if (!region) {
       throw new Error('AWS region is required. Please configure AWS-Region in extra headers.')
@@ -198,11 +203,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
   }
 
   async listModels(): Promise<SdkModel[]> {
-    return [
-      { id: 'us.anthropic.claude-opus-4-20250514-v1:0', name: 'Claude Opus 4 (US)' },
-      { id: 'us.anthropic.claude-sonnet-4-20250514-v1:0', name: 'Claude Sonnet 4 (US)' },
-      { id: 'us.anthropic.claude-3-7-sonnet-20250219-v1:0', name: 'Claude 3.7 Sonnet (US)' }
-    ]
+    return []
   }
 
   async convertMessageToSdkParam(message: Message): Promise<AwsBedrockSdkMessageParam> {
@@ -299,7 +300,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
               id: toolUse.toolUseId, // 设置 id 字段与 toolUseId 相同
               name: toolUse.name,
               toolUseId: toolUse.toolUseId,
-              input: {} // Will be populated by input deltas
+              input: {}
             }
             logger.debug('Tool use started:', toolUse)
           }
@@ -335,14 +336,14 @@ export class AwsBedrockAPIClient extends BaseApiClient<
             if (toolCall && accumulatedJson) {
               try {
                 toolCall.input = JSON.parse(accumulatedJson)
-                logger.debug(`Tool call id: ${toolCall.toolUseId}, accumulated json: ${accumulatedJson}`)
+                logger.debug('Tool call id:', toolCall.toolUseId, 'accumulated json:', accumulatedJson)
                 controller.enqueue({
                   type: ChunkType.MCP_TOOL_CREATED,
                   tool_calls: [toolCall]
                 } as MCPToolCreatedChunk)
-                accumulatedJson = '' // Reset for next tool
+                accumulatedJson = ''
               } catch (error) {
-                logger.error(`Error parsing tool call input: ${error}`)
+                logger.error('Error parsing tool call input:', error)
               }
             }
           }
@@ -406,11 +407,11 @@ export class AwsBedrockAPIClient extends BaseApiClient<
 
   convertSdkToolCallToMcpToolResponse(toolCall: AwsBedrockSdkToolCall, mcpTool: MCPTool): ToolCallResponse {
     return {
-      id: toolCall.id || toolCall.toolUseId || '', // 优先使用 id 字段
+      id: toolCall.id,
       tool: mcpTool,
       arguments: toolCall.input || {},
       status: 'pending',
-      toolCallId: toolCall.toolUseId
+      toolCallId: toolCall.id
     }
   }
 
@@ -457,7 +458,6 @@ export class AwsBedrockAPIClient extends BaseApiClient<
       // 使用专用的转换函数处理 toolUseId 情况
       return mcpToolCallResponseToAwsBedrockMessage(mcpToolResponse, resp, model)
     } else if ('toolCallId' in mcpToolResponse && mcpToolResponse.toolCallId) {
-      // 处理 toolCallId 情况 - 作为备用标识
       return {
         role: 'user',
         content: [
@@ -480,9 +480,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
         ]
       }
     }
-
-    // 如果既没有 toolUseId 也没有 toolCallId，返回 undefined
-    return undefined
+    return
   }
 
   extractMessagesFromSdkPayload(sdkPayload: AwsBedrockSdkParams): AwsBedrockSdkMessageParam[] {
