@@ -373,8 +373,8 @@ const ProviderSetting: FC<Props> = ({ providerId }) => {
       {provider.id === 'lmstudio' && <LMStudioSettings />}
       {provider.id === 'gpustack' && <GPUStackSettings />}
       {provider.id === 'copilot' && <GithubCopilotSettings providerId={provider.id} />}
-      {provider.id === 'vertexai' && <VertexAISettings />}
       {provider.id === 'aws-bedrock' && <AwsBedrockSettings />}
+      {provider.id === 'vertexai' && <VertexAISettings providerId={provider.id} />}
       <ModelList providerId={provider.id} />
     </SettingContainer>
   )

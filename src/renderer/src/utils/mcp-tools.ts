@@ -418,10 +418,12 @@ export function geminiFunctionCallToMcpTool(
 ): MCPTool | undefined {
   if (!toolCall) return undefined
   if (!mcpTools) return undefined
-  const tool = mcpTools.find((tool) => tool.id === toolCall.name || tool.name === toolCall.name)
-  if (!tool) {
-    return undefined
-  }
+
+  const toolName = toolCall.name || toolCall.id
+  if (!toolName) return undefined
+
+  const tool = mcpTools.find((tool) => tool.id.includes(toolName) || tool.name.includes(toolName))
+
   return tool
 }
 
@@ -489,6 +491,9 @@ export function getMcpServerByTool(tool: MCPTool) {
 }
 
 export function isToolAutoApproved(tool: MCPTool, server?: MCPServer): boolean {
+  if (tool.isBuiltIn) {
+    return true
+  }
   const effectiveServer = server ?? getMcpServerByTool(tool)
   return effectiveServer ? !effectiveServer.disabledAutoApproveTools?.includes(tool.name) : false
 }

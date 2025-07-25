@@ -8,6 +8,7 @@ import {
   ToolUseBlock
 } from '@anthropic-ai/sdk/resources'
 import { MessageStream } from '@anthropic-ai/sdk/resources/messages/messages'
+import AnthropicVertex from '@anthropic-ai/vertex-sdk'
 import type { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime'
 import {
   Content,
@@ -24,7 +25,7 @@ import { Stream } from 'openai/streaming'
 
 import { EndpointType } from './index'
 
-export type SdkInstance = OpenAI | AzureOpenAI | Anthropic | GoogleGenAI | AwsBedrockSdkInstance
+export type SdkInstance = OpenAI | AzureOpenAI | Anthropic | AnthropicVertex | GoogleGenAI | AwsBedrockSdkInstance
 export type SdkParams =
   | OpenAISdkParams
   | OpenAIResponseSdkParams
