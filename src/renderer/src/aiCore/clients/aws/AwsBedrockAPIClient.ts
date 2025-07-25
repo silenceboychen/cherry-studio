@@ -1,9 +1,4 @@
-import {
-  BedrockRuntimeClient,
-  ConverseCommand,
-  ConverseStreamCommand,
-  Message as AWSMessage
-} from '@aws-sdk/client-bedrock-runtime'
+import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand } from '@aws-sdk/client-bedrock-runtime'
 import { loggerService } from '@logger'
 import { GenericChunk } from '@renderer/aiCore/middleware/schemas'
 import { DEFAULT_MAX_TOKENS } from '@renderer/config/constant'
@@ -34,8 +29,13 @@ import {
   AwsBedrockSdkToolCall,
   SdkModel
 } from '@renderer/types/sdk'
-import { isEnabledToolUse, mcpToolCallResponseToAwsBedrockMessage } from '@renderer/utils/mcp-tools'
-import { buildSystemPrompt } from '@renderer/utils/prompt'
+import {
+  awsBedrockToolUseToMcpTool,
+  isEnabledToolUse,
+  mcpToolCallResponseToAwsBedrockMessage,
+  mcpToolsToAwsBedrockTools
+} from '@renderer/utils/mcp-tools'
+import { findImageBlocks } from '@renderer/utils/messageUtils/find'
 
 import { BaseApiClient } from '../BaseApiClient'
 import { RequestTransformer, ResponseChunkTransformer } from '../types'
@@ -84,21 +84,30 @@ export class AwsBedrockAPIClient extends BaseApiClient<
     return this.sdkInstance
   }
 
-  async createCompletions(payload: AwsBedrockSdkParams): Promise<AwsBedrockSdkRawOutput> {
+  override async createCompletions(payload: AwsBedrockSdkParams): Promise<AwsBedrockSdkRawOutput> {
     const sdk = await this.getSdkInstance()
 
     // 转换消息格式到AWS SDK原生格式
-    const awsMessages: AWSMessage[] = payload.messages.map((msg) => ({
+    const awsMessages = payload.messages.map((msg) => ({
       role: msg.role,
       content: msg.content.map((content) => {
         if (content.text) {
           return { text: content.text }
         }
+        if (content.image) {
+          return {
+            image: {
+              format: content.image.format,
+              source: content.image.source
+            }
+          }
+        }
         if (content.toolResult) {
           return {
             toolResult: {
               toolUseId: content.toolResult.toolUseId,
-              content: content.toolResult.content
+              content: content.toolResult.content,
+              status: content.toolResult.status
             }
           }
         }
@@ -111,13 +120,14 @@ export class AwsBedrockAPIClient extends BaseApiClient<
             }
           }
         }
-        return { text: '' }
+        // 返回符合AWS SDK ContentBlock类型的对象
+        return { text: 'Unknown content type' }
       })
     }))
 
     const commonParams = {
       modelId: payload.modelId,
-      messages: awsMessages,
+      messages: awsMessages as any,
       system: payload.system ? [{ text: payload.system }] : undefined,
       inferenceConfig: {
         maxTokens: payload.maxTokens || DEFAULT_MAX_TOKENS,
@@ -183,12 +193,13 @@ export class AwsBedrockAPIClient extends BaseApiClient<
     }
   }
 
+  // @ts-ignore sdk未提供
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async generateImage(_generateImageParams: GenerateImageParams): Promise<string[]> {
-    throw new Error('AWS Bedrock image generation not implemented yet')
+  override async generateImage(_generateImageParams: GenerateImageParams): Promise<string[]> {
+    return []
   }
 
-  async getEmbeddingDimensions(model?: Model): Promise<number> {
+  override async getEmbeddingDimensions(model?: Model): Promise<number> {
     if (!model) return 1536
 
     const modelId = model.id.toLowerCase()
@@ -202,16 +213,111 @@ export class AwsBedrockAPIClient extends BaseApiClient<
     return 1536
   }
 
-  async listModels(): Promise<SdkModel[]> {
+  // @ts-ignore sdk未提供
+  override async listModels(): Promise<SdkModel[]> {
     return []
   }
 
-  async convertMessageToSdkParam(message: Message): Promise<AwsBedrockSdkMessageParam> {
+  public async convertMessageToSdkParam(message: Message): Promise<AwsBedrockSdkMessageParam> {
     const content = await this.getMessageContent(message)
+    const parts: Array<{
+      text?: string
+      image?: {
+        format: 'png' | 'jpeg' | 'gif' | 'webp'
+        source: {
+          bytes?: Uint8Array
+          s3Location?: {
+            uri: string
+            bucketOwner?: string
+          }
+        }
+      }
+    }> = []
+
+    // 添加文本内容 - 只在有非空内容时添加
+    if (content && content.trim()) {
+      parts.push({ text: content })
+    }
+
+    // 处理图片内容
+    const imageBlocks = findImageBlocks(message)
+    for (const imageBlock of imageBlocks) {
+      if (imageBlock.file) {
+        try {
+          const image = await window.api.file.base64Image(imageBlock.file.id + imageBlock.file.ext)
+          // 从MIME类型中提取格式
+          const mimeType = image.mime || 'image/png'
+          const format = mimeType.split('/')[1] as 'png' | 'jpeg' | 'gif' | 'webp'
+
+          if (['png', 'jpeg', 'gif', 'webp'].includes(format)) {
+            // 在浏览器环境中正确处理base64转换为Uint8Array
+            const base64Data = image.base64
+            const binaryString = atob(base64Data)
+            const bytes = new Uint8Array(binaryString.length)
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i)
+            }
+
+            parts.push({
+              image: {
+                format: format,
+                source: {
+                  bytes: bytes
+                }
+              }
+            })
+          } else {
+            // 不支持的格式，转换为文本描述
+            parts.push({ text: `[Image: ${mimeType}]` })
+          }
+        } catch (error) {
+          logger.error('Error processing image:', error as Error)
+          parts.push({ text: '[Image processing failed]' })
+        }
+      } else if (imageBlock.url && imageBlock.url.startsWith('data:')) {
+        try {
+          // 处理base64图片URL
+          const matches = imageBlock.url.match(/^data:(.+);base64,(.*)$/)
+          if (matches && matches.length === 3) {
+            const mimeType = matches[1]
+            const base64Data = matches[2]
+            const format = mimeType.split('/')[1] as 'png' | 'jpeg' | 'gif' | 'webp'
+
+            if (['png', 'jpeg', 'gif', 'webp'].includes(format)) {
+              // 在浏览器环境中正确处理base64转换为Uint8Array
+              const binaryString = atob(base64Data)
+              const bytes = new Uint8Array(binaryString.length)
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i)
+              }
+
+              parts.push({
+                image: {
+                  format: format,
+                  source: {
+                    bytes: bytes
+                  }
+                }
+              })
+            } else {
+              parts.push({ text: `[Image: ${mimeType}]` })
+            }
+          }
+        } catch (error) {
+          logger.error('Error processing base64 image:', error as Error)
+          parts.push({ text: '[Image processing failed]' })
+        }
+      }
+    }
+
+    // 如果没有任何内容，添加默认文本而不是空文本
+    if (parts.length === 0) {
+      parts.push({ text: 'No content provided' })
+    }
 
     return {
       role: message.role === 'system' ? 'user' : message.role,
-      content: [{ text: content }]
+      content: parts
     }
   }
 
@@ -229,21 +335,16 @@ export class AwsBedrockAPIClient extends BaseApiClient<
         metadata: Record<string, any>
       }> => {
         const { messages, mcpTools, maxTokens, streamOutput } = coreRequest
-
-        // 设置工具
+        // 1. 处理系统消息
+        const systemPrompt = assistant.prompt
+        // 2. 设置工具
         const { tools } = this.setupToolsConfig({
           mcpTools: mcpTools,
           model,
           enableToolUse: isEnabledToolUse(assistant)
         })
 
-        let systemPrompt = assistant.prompt
-
-        if (this.useSystemPromptForTools) {
-          systemPrompt = await buildSystemPrompt(systemPrompt, mcpTools, assistant)
-        }
-
-        // 处理消息
+        // 3. 处理消息
         const sdkMessages: AwsBedrockSdkMessageParam[] = []
         if (typeof messages === 'string') {
           sdkMessages.push({ role: 'user', content: [{ text: messages }] })
@@ -365,38 +466,12 @@ export class AwsBedrockAPIClient extends BaseApiClient<
     }
   }
 
-  convertMcpToolsToSdkTools(mcpTools: MCPTool[]): AwsBedrockSdkTool[] {
-    return mcpTools.map((mcpTool) => ({
-      toolSpec: {
-        name: mcpTool.name,
-        description: mcpTool.description,
-        inputSchema: {
-          json: {
-            type: 'object',
-            properties: mcpTool.inputSchema?.properties
-              ? Object.fromEntries(
-                  Object.entries(mcpTool.inputSchema.properties).map(([key, value]) => [
-                    key,
-                    {
-                      type:
-                        typeof value === 'object' && value !== null && 'type' in value ? (value as any).type : 'string',
-                      description:
-                        typeof value === 'object' && value !== null && 'description' in value
-                          ? (value as any).description
-                          : undefined
-                    }
-                  ])
-                )
-              : {},
-            required: mcpTool.inputSchema?.required || []
-          }
-        }
-      }
-    }))
+  public convertMcpToolsToSdkTools(mcpTools: MCPTool[]): AwsBedrockSdkTool[] {
+    return mcpToolsToAwsBedrockTools(mcpTools)
   }
 
   convertSdkToolCallToMcp(toolCall: AwsBedrockSdkToolCall, mcpTools: MCPTool[]): MCPTool | undefined {
-    return mcpTools.find((tool) => tool.name === toolCall.name)
+    return awsBedrockToolUseToMcpTool(mcpTools, toolCall)
   }
 
   convertSdkToolCallToMcpToolResponse(toolCall: AwsBedrockSdkToolCall, mcpTool: MCPTool): ToolCallResponse {
@@ -409,7 +484,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
     }
   }
 
-  buildSdkMessages(
+  override buildSdkMessages(
     currentReqMessages: AwsBedrockSdkMessageParam[],
     output: AwsBedrockSdkRawOutput | string | undefined,
     toolResults: AwsBedrockSdkMessageParam[]
@@ -430,7 +505,10 @@ export class AwsBedrockAPIClient extends BaseApiClient<
     return messages
   }
 
-  estimateMessageTokens(message: AwsBedrockSdkMessageParam): number {
+  override estimateMessageTokens(message: AwsBedrockSdkMessageParam): number {
+    if (typeof message.content === 'string') {
+      return estimateTextTokens(message.content)
+    }
     const content = message.content
     if (Array.isArray(content)) {
       return content.reduce((total, item) => {
@@ -443,7 +521,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
     return 0
   }
 
-  convertMcpToolResponseToSdkMessageParam(
+  public convertMcpToolResponseToSdkMessageParam(
     mcpToolResponse: MCPToolResponse,
     resp: MCPCallToolResponse,
     model: Model
@@ -461,10 +539,25 @@ export class AwsBedrockAPIClient extends BaseApiClient<
               content: resp.content
                 .map((item) => {
                   if (item.type === 'text') {
-                    return { text: item.text || '' }
+                    // 确保文本不为空，如果为空则提供默认文本
+                    return { text: item.text && item.text.trim() ? item.text : 'No text content' }
                   }
-                  if (item.type === 'image') {
-                    return { text: `[Image: ${item.mimeType || 'image/png'}]` }
+                  if (item.type === 'image' && item.data) {
+                    const format = (item.mimeType?.split('/')[1] as 'png' | 'jpeg' | 'gif' | 'webp') || 'png'
+                    // 在浏览器环境中正确处理base64转换为Uint8Array
+                    const binaryString = atob(item.data)
+                    const bytes = new Uint8Array(binaryString.length)
+                    for (let i = 0; i < binaryString.length; i++) {
+                      bytes[i] = binaryString.charCodeAt(i)
+                    }
+                    return {
+                      image: {
+                        format: format,
+                        source: {
+                          bytes: bytes
+                        }
+                      }
+                    }
                   }
                   return { text: JSON.stringify(item) }
                 })
@@ -474,7 +567,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
         ]
       }
     }
-    return
+    return undefined
   }
 
   extractMessagesFromSdkPayload(sdkPayload: AwsBedrockSdkParams): AwsBedrockSdkMessageParam[] {

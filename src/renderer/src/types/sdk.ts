@@ -163,9 +163,35 @@ export interface AwsBedrockSdkMessageParam {
   role: 'user' | 'assistant'
   content: Array<{
     text?: string
+    image?: {
+      format: 'png' | 'jpeg' | 'gif' | 'webp'
+      source: {
+        bytes?: Uint8Array
+        s3Location?: {
+          uri: string
+          bucketOwner?: string
+        }
+      }
+    }
     toolResult?: {
       toolUseId: string
-      content: Array<{ text: string }>
+      content: Array<{
+        json?: any
+        text?: string
+        image?: {
+          format: 'png' | 'jpeg' | 'gif' | 'webp'
+          source: {
+            bytes?: Uint8Array
+            s3Location?: {
+              uri: string
+              bucketOwner?: string
+            }
+          }
+        }
+        document?: any
+        video?: any
+      }>
+      status?: 'success' | 'error'
     }
     toolUse?: {
       toolUseId: string

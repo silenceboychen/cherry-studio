@@ -51,7 +51,7 @@ const AwsBedrockSettings: FC = () => {
       <SettingSubtitle style={{ marginTop: 5 }}>{t('settings.provider.aws-bedrock.access_key_id')}</SettingSubtitle>
       <Input
         value={localAccessKeyId}
-        placeholder={t('settings.provider.aws-bedrock.access_key_id_placeholder')}
+        placeholder="Access Key ID"
         onChange={handleAccessKeyIdChange}
         onBlur={handleAccessKeyIdBlur}
         style={{ marginTop: 5 }}
@@ -63,7 +63,7 @@ const AwsBedrockSettings: FC = () => {
       <SettingSubtitle style={{ marginTop: 5 }}>{t('settings.provider.aws-bedrock.secret_access_key')}</SettingSubtitle>
       <Input.Password
         value={localSecretAccessKey}
-        placeholder={t('settings.provider.aws-bedrock.secret_access_key_placeholder')}
+        placeholder="Secret Access Key"
         onChange={handleSecretAccessKeyChange}
         onBlur={handleSecretAccessKeyBlur}
         style={{ marginTop: 5 }}
@@ -83,7 +83,7 @@ const AwsBedrockSettings: FC = () => {
       <SettingSubtitle style={{ marginTop: 5 }}>{t('settings.provider.aws-bedrock.region')}</SettingSubtitle>
       <Input
         value={localRegion}
-        placeholder={t('settings.provider.aws-bedrock.region_placeholder')}
+        placeholder="us-east-1"
         onChange={handleRegionChange}
         onBlur={handleRegionBlur}
         style={{ marginTop: 5 }}
