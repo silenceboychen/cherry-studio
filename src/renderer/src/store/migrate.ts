@@ -1907,14 +1907,6 @@ const migrateConfig = {
         updateModelTextDelta(state.assistants.defaultAssistant.defaultModel)
       }
 
-      return state
-    } catch (error) {
-      logger.error('migrate 124 error', error as Error)
-      return state
-    }
-  },
-  '125': (state: RootState) => {
-    try {
       addProvider(state, 'aws-bedrock')
 
       // 初始化 awsBedrock 设置
@@ -1924,7 +1916,7 @@ const migrateConfig = {
 
       return state
     } catch (error) {
-      logger.error('migrate 125 error', error as Error)
+      logger.error('migrate 124 error', error as Error)
       return state
     }
   }

@@ -19,30 +19,6 @@ const AwsBedrockSettings: FC = () => {
   const [localSecretAccessKey, setLocalSecretAccessKey] = useState(secretAccessKey)
   const [localRegion, setLocalRegion] = useState(region)
 
-  const handleAccessKeyIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setLocalAccessKeyId(e.target.value)
-  }
-
-  const handleSecretAccessKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setLocalSecretAccessKey(e.target.value)
-  }
-
-  const handleRegionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setLocalRegion(e.target.value)
-  }
-
-  const handleAccessKeyIdBlur = () => {
-    setAccessKeyId(localAccessKeyId)
-  }
-
-  const handleSecretAccessKeyBlur = () => {
-    setSecretAccessKey(localSecretAccessKey)
-  }
-
-  const handleRegionBlur = () => {
-    setRegion(localRegion)
-  }
-
   return (
     <>
       <SettingSubtitle style={{ marginTop: 5 }}>{t('settings.provider.aws-bedrock.title')}</SettingSubtitle>
@@ -52,8 +28,8 @@ const AwsBedrockSettings: FC = () => {
       <Input
         value={localAccessKeyId}
         placeholder="Access Key ID"
-        onChange={handleAccessKeyIdChange}
-        onBlur={handleAccessKeyIdBlur}
+        onChange={(e) => setLocalAccessKeyId(e.target.value)}
+        onBlur={() => setAccessKeyId(localAccessKeyId)}
         style={{ marginTop: 5 }}
       />
       <SettingHelpTextRow>
@@ -64,8 +40,8 @@ const AwsBedrockSettings: FC = () => {
       <Input.Password
         value={localSecretAccessKey}
         placeholder="Secret Access Key"
-        onChange={handleSecretAccessKeyChange}
-        onBlur={handleSecretAccessKeyBlur}
+        onChange={(e) => setLocalSecretAccessKey(e.target.value)}
+        onBlur={() => setSecretAccessKey(localSecretAccessKey)}
         style={{ marginTop: 5 }}
         spellCheck={false}
       />
@@ -84,8 +60,8 @@ const AwsBedrockSettings: FC = () => {
       <Input
         value={localRegion}
         placeholder="us-east-1"
-        onChange={handleRegionChange}
-        onBlur={handleRegionBlur}
+        onChange={(e) => setLocalRegion(e.target.value)}
+        onBlur={() => setRegion(localRegion)}
         style={{ marginTop: 5 }}
       />
       <SettingHelpTextRow>

@@ -28,6 +28,8 @@ import {
   ChatCompletionTool
 } from 'openai/resources'
 
+import { convertBase64ImageToAwsBedrockFormat } from './aws-bedrock-utils'
+
 const logger = loggerService.withContext('Utils:MCPTools')
 
 const MCP_AUTO_INSTALL_SERVER_NAME = '@cherry/mcp-auto-install'
@@ -936,23 +938,9 @@ export function mcpToolCallResponseToAwsBedrockMessage(
             break
           case 'image':
             if (item.data && item.mimeType) {
-              const format = item.mimeType.split('/')[1] as 'png' | 'jpeg' | 'gif' | 'webp'
-              if (['png', 'jpeg', 'gif', 'webp'].includes(format)) {
-                // 在浏览器环境中正确处理base64转换为Uint8Array
-                const binaryString = atob(item.data)
-                const bytes = new Uint8Array(binaryString.length)
-                for (let i = 0; i < binaryString.length; i++) {
-                  bytes[i] = binaryString.charCodeAt(i)
-                }
-
-                toolResultContent.push({
-                  image: {
-                    format: format,
-                    source: {
-                      bytes: bytes
-                    }
-                  }
-                })
+              const awsImage = convertBase64ImageToAwsBedrockFormat(item.data, item.mimeType)
+              if (awsImage) {
+                toolResultContent.push({ image: awsImage })
               } else {
                 toolResultContent.push({
                   text: `[Image received: ${item.mimeType}, size: ${item.data?.length || 0} bytes]`

@@ -29,6 +29,7 @@ import {
   AwsBedrockSdkToolCall,
   SdkModel
 } from '@renderer/types/sdk'
+import { convertBase64ImageToAwsBedrockFormat } from '@renderer/utils/aws-bedrock-utils'
 import {
   awsBedrockToolUseToMcpTool,
   isEnabledToolUse,
@@ -199,18 +200,9 @@ export class AwsBedrockAPIClient extends BaseApiClient<
     return []
   }
 
-  override async getEmbeddingDimensions(model?: Model): Promise<number> {
-    if (!model) return 1536
-
-    const modelId = model.id.toLowerCase()
-    if (modelId.includes('titan-embed')) {
-      return 1536
-    }
-    if (modelId.includes('cohere.embed')) {
-      return 1024
-    }
-
-    return 1536
+  // @ts-ignore sdk未提供
+  override async getEmbeddingDimensions(): Promise<number> {
+    throw new Error("AWS Bedrock SDK doesn't support getEmbeddingDimensions method.")
   }
 
   // @ts-ignore sdk未提供
@@ -245,27 +237,12 @@ export class AwsBedrockAPIClient extends BaseApiClient<
       if (imageBlock.file) {
         try {
           const image = await window.api.file.base64Image(imageBlock.file.id + imageBlock.file.ext)
-          // 从MIME类型中提取格式
           const mimeType = image.mime || 'image/png'
-          const format = mimeType.split('/')[1] as 'png' | 'jpeg' | 'gif' | 'webp'
+          const base64Data = image.base64
 
-          if (['png', 'jpeg', 'gif', 'webp'].includes(format)) {
-            // 在浏览器环境中正确处理base64转换为Uint8Array
-            const base64Data = image.base64
-            const binaryString = atob(base64Data)
-            const bytes = new Uint8Array(binaryString.length)
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i)
-            }
-
-            parts.push({
-              image: {
-                format: format,
-                source: {
-                  bytes: bytes
-                }
-              }
-            })
+          const awsImage = convertBase64ImageToAwsBedrockFormat(base64Data, mimeType)
+          if (awsImage) {
+            parts.push({ image: awsImage })
           } else {
             // 不支持的格式，转换为文本描述
             parts.push({ text: `[Image: ${mimeType}]` })
@@ -281,24 +258,10 @@ export class AwsBedrockAPIClient extends BaseApiClient<
           if (matches && matches.length === 3) {
             const mimeType = matches[1]
             const base64Data = matches[2]
-            const format = mimeType.split('/')[1] as 'png' | 'jpeg' | 'gif' | 'webp'
 
-            if (['png', 'jpeg', 'gif', 'webp'].includes(format)) {
-              // 在浏览器环境中正确处理base64转换为Uint8Array
-              const binaryString = atob(base64Data)
-              const bytes = new Uint8Array(binaryString.length)
-              for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i)
-              }
-
-              parts.push({
-                image: {
-                  format: format,
-                  source: {
-                    bytes: bytes
-                  }
-                }
-              })
+            const awsImage = convertBase64ImageToAwsBedrockFormat(base64Data, mimeType)
+            if (awsImage) {
+              parts.push({ image: awsImage })
             } else {
               parts.push({ text: `[Image: ${mimeType}]` })
             }
@@ -382,7 +345,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
 
       return {
         async transform(rawChunk: AwsBedrockSdkRawChunk, controller: TransformStreamDefaultController<GenericChunk>) {
-          logger.debug('Processing AWS Bedrock chunk:', rawChunk)
+          logger.silly('Processing AWS Bedrock chunk:', rawChunk)
 
           // 处理消息开始事件
           if (rawChunk.messageStart) {
@@ -543,20 +506,12 @@ export class AwsBedrockAPIClient extends BaseApiClient<
                     return { text: item.text && item.text.trim() ? item.text : 'No text content' }
                   }
                   if (item.type === 'image' && item.data) {
-                    const format = (item.mimeType?.split('/')[1] as 'png' | 'jpeg' | 'gif' | 'webp') || 'png'
-                    // 在浏览器环境中正确处理base64转换为Uint8Array
-                    const binaryString = atob(item.data)
-                    const bytes = new Uint8Array(binaryString.length)
-                    for (let i = 0; i < binaryString.length; i++) {
-                      bytes[i] = binaryString.charCodeAt(i)
-                    }
-                    return {
-                      image: {
-                        format: format,
-                        source: {
-                          bytes: bytes
-                        }
-                      }
+                    const awsImage = convertBase64ImageToAwsBedrockFormat(item.data, item.mimeType)
+                    if (awsImage) {
+                      return { image: awsImage }
+                    } else {
+                      // 如果转换失败，返回描述性文本
+                      return { text: `[Image: ${item.mimeType || 'unknown format'}]` }
                     }
                   }
                   return { text: JSON.stringify(item) }
