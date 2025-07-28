@@ -1,4 +1,9 @@
-import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand } from '@aws-sdk/client-bedrock-runtime'
+import {
+  BedrockRuntimeClient,
+  ConverseCommand,
+  ConverseStreamCommand,
+  InvokeModelCommand
+} from '@aws-sdk/client-bedrock-runtime'
 import { loggerService } from '@logger'
 import { GenericChunk } from '@renderer/aiCore/middleware/schemas'
 import { DEFAULT_MAX_TOKENS } from '@renderer/config/constant'
@@ -200,9 +205,94 @@ export class AwsBedrockAPIClient extends BaseApiClient<
     return []
   }
 
-  // @ts-ignore sdk未提供
-  override async getEmbeddingDimensions(): Promise<number> {
-    throw new Error("AWS Bedrock SDK doesn't support getEmbeddingDimensions method.")
+  override async getEmbeddingDimensions(model?: Model): Promise<number> {
+    if (!model) {
+      throw new Error('Model is required for AWS Bedrock embedding dimensions.')
+    }
+
+    const sdk = await this.getSdkInstance()
+
+    // AWS Bedrock 支持的嵌入模型及其维度
+    const embeddingModels: Record<string, number> = {
+      'cohere.embed-english-v3': 1024,
+      'cohere.embed-multilingual-v3': 1024,
+      // Amazon Titan embeddings
+      'amazon.titan-embed-text-v1': 1536,
+      'amazon.titan-embed-text-v2:0': 1024
+      // 可以根据需要添加更多模型
+    }
+
+    // 如果是已知的嵌入模型，直接返回维度
+    if (embeddingModels[model.id]) {
+      return embeddingModels[model.id]
+    }
+
+    // 对于未知模型，尝试实际调用API获取维度
+    try {
+      let requestBody: any
+
+      if (model.id.startsWith('cohere.embed')) {
+        // Cohere Embed API 格式
+        requestBody = {
+          texts: ['test'],
+          input_type: 'search_document',
+          embedding_types: ['float']
+        }
+      } else if (model.id.startsWith('amazon.titan-embed')) {
+        // Amazon Titan Embed API 格式
+        requestBody = {
+          inputText: 'test'
+        }
+      } else {
+        // 通用格式，大多数嵌入模型都支持
+        requestBody = {
+          inputText: 'test'
+        }
+      }
+
+      const command = new InvokeModelCommand({
+        modelId: model.id,
+        body: JSON.stringify(requestBody),
+        contentType: 'application/json',
+        accept: 'application/json'
+      })
+
+      const response = await sdk.client.send(command)
+      const responseBody = JSON.parse(new TextDecoder().decode(response.body))
+
+      // 解析响应获取嵌入维度
+      if (responseBody.embeddings && responseBody.embeddings.length > 0) {
+        // Cohere 格式
+        if (responseBody.embeddings[0].values) {
+          return responseBody.embeddings[0].values.length
+        }
+        // 其他可能的格式
+        if (Array.isArray(responseBody.embeddings[0])) {
+          return responseBody.embeddings[0].length
+        }
+      }
+
+      if (responseBody.embedding && Array.isArray(responseBody.embedding)) {
+        // Amazon Titan 格式
+        return responseBody.embedding.length
+      }
+
+      // 如果无法解析，返回默认值
+      logger.warn(`Unable to determine embedding dimensions for model ${model.id}, using default 1024`)
+      return 1024
+    } catch (error) {
+      logger.error('Failed to get embedding dimensions from AWS Bedrock:', error as Error)
+
+      // 根据模型名称推测维度
+      if (model.id.includes('titan')) {
+        return 1536 // Amazon Titan 默认维度
+      }
+      if (model.id.includes('cohere')) {
+        return 1024 // Cohere 默认维度
+      }
+
+      throw new Error(`Unable to determine embedding dimensions for model ${model.id}: ${(error as Error).message}`)
+    }
   }
 
   // @ts-ignore sdk未提供
