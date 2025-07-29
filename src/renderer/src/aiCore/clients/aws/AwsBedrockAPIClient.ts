@@ -277,9 +277,8 @@ export class AwsBedrockAPIClient extends BaseApiClient<
         return responseBody.embedding.length
       }
 
-      // 如果无法解析，返回默认值
-      logger.warn(`Unable to determine embedding dimensions for model ${model.id}, using default 1024`)
-      return 1024
+      // 如果无法解析，则抛出错误
+      throw new Error(`Unable to determine embedding dimensions for model ${model.id}`)
     } catch (error) {
       logger.error('Failed to get embedding dimensions from AWS Bedrock:', error as Error)
 
