@@ -333,9 +333,9 @@ export class AwsBedrockAPIClient extends BaseApiClient<
 
           logger.info('Adding ON_DEMAND model', { modelId: model.modelId })
           models.push({
-            id: model.modelId!,
-            name: model.modelName!,
-            display_name: model.modelName!,
+            id: model.modelId,
+            name: model.modelName,
+            display_name: model.modelName,
             description: `${model.providerName || 'AWS'} - ${model.modelName}`,
             owned_by: model.providerName || 'AWS',
             provider: this.provider.id,
@@ -356,7 +356,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
           })
 
           models.push({
-            id: profile.inferenceProfileArn!,
+            id: profile.inferenceProfileArn,
             name: `${profile.inferenceProfileName} (Profile)`,
             display_name: `${profile.inferenceProfileName} (Profile)`,
             description: `AWS Inference Profile - ${profile.inferenceProfileName}`,
