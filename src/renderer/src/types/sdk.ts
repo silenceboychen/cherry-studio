@@ -207,6 +207,22 @@ export interface AwsBedrockSdkMessageParam {
   }>
 }
 
+export interface AwsBedrockStreamChunk {
+  type: string
+  delta?: {
+    text?: string
+    toolUse?: { input?: string }
+    type?: string
+    thinking?: string
+  }
+  index?: number
+  content_block?: any
+  usage?: {
+    inputTokens?: number
+    outputTokens?: number
+  }
+}
+
 export interface AwsBedrockSdkRawChunk {
   contentBlockStart?: {
     start?: {

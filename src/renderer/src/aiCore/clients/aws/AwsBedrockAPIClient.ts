@@ -8,6 +8,7 @@ import {
 import { loggerService } from '@logger'
 import { GenericChunk } from '@renderer/aiCore/middleware/schemas'
 import { DEFAULT_MAX_TOKENS } from '@renderer/config/constant'
+import { findTokenLimit, isReasoningModel } from '@renderer/config/models'
 import {
   getAwsBedrockAccessKeyId,
   getAwsBedrockRegion,
@@ -42,6 +43,7 @@ import {
   AwsBedrockSdkRawOutput,
   AwsBedrockSdkTool,
   AwsBedrockSdkToolCall,
+  AwsBedrockStreamChunk,
   SdkModel
 } from '@renderer/types/sdk'
 import { convertBase64ImageToAwsBedrockFormat } from '@renderer/utils/aws-bedrock-utils'
@@ -166,12 +168,10 @@ export class AwsBedrockAPIClient extends BaseApiClient<
 
     logger.info('Creating completions with model ID:', { modelId: payload.modelId })
 
-    const additionalParams = Object.fromEntries(
-      Object.entries(payload).filter(
-        ([key]) =>
-          !['modelId', 'messages', 'system', 'maxTokens', 'temperature', 'topP', 'stream', 'tools'].includes(key)
-      )
-    )
+    const excludeKeys = ['modelId', 'messages', 'system', 'maxTokens', 'temperature', 'topP', 'stream', 'tools']
+    const additionalParams = Object.keys(payload)
+      .filter((key) => !excludeKeys.includes(key))
+      .reduce((acc, key) => ({ ...acc, [key]: payload[key] }), {})
 
     const commonParams = {
       modelId: payload.modelId,
@@ -187,8 +187,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
           ? {
               tools: payload.tools
             }
-          : undefined,
-      ...additionalParams
+          : undefined
     }
 
     try {
@@ -229,7 +228,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
       if (response.body) {
         for await (const event of response.body) {
           if (event.chunk) {
-            const chunk = JSON.parse(new TextDecoder().decode(event.chunk.bytes))
+            const chunk: AwsBedrockStreamChunk = JSON.parse(new TextDecoder().decode(event.chunk.bytes))
 
             // 转换为标准格式
             if (chunk.type === 'content_block_delta') {
@@ -540,11 +539,8 @@ export class AwsBedrockAPIClient extends BaseApiClient<
           }
         }
 
-        // 获取自定义参数
-        const customParams = this.getCustomParameters(assistant)
-
         // 获取推理预算token
-        const budgetTokens = await this.getBudgetToken(assistant, model)
+        const budgetTokens = this.getBudgetToken(assistant, model)
 
         const payload: AwsBedrockSdkParams = {
           modelId: model.id,
@@ -559,7 +555,8 @@ export class AwsBedrockAPIClient extends BaseApiClient<
           stream: streamOutput !== false,
           tools: tools.length > 0 ? tools : undefined,
           ...(budgetTokens ? { thinking: { type: 'enabled', budget_tokens: budgetTokens } } : {}),
-          ...customParams
+          // 只在对话场景下应用自定义参数，避免影响翻译、总结等其他业务逻辑
+          ...(coreRequest.callType === 'chat' ? this.getCustomParameters(assistant) : {})
         }
 
         const timeout = this.getTimeout(model)
@@ -794,11 +791,8 @@ export class AwsBedrockAPIClient extends BaseApiClient<
    * @param model - The model
    * @returns The budget tokens for reasoning effort
    */
-  private async getBudgetToken(assistant: Assistant, model: Model): Promise<number | undefined> {
+  private getBudgetToken(assistant: Assistant, model: Model): number | undefined {
     try {
-      // 动态导入以避免循环依赖
-      const { findTokenLimit, isReasoningModel } = await import('@renderer/config/models')
-
       if (!isReasoningModel(model)) {
         return undefined
       }
