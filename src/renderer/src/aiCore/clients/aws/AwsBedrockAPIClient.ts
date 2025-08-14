@@ -2,8 +2,8 @@ import { BedrockClient, ListFoundationModelsCommand, ListInferenceProfilesComman
 import {
   BedrockRuntimeClient,
   ConverseCommand,
-  ConverseStreamCommand,
-  InvokeModelCommand
+  InvokeModelCommand,
+  InvokeModelWithResponseStreamCommand
 } from '@aws-sdk/client-bedrock-runtime'
 import { loggerService } from '@logger'
 import { GenericChunk } from '@renderer/aiCore/middleware/schemas'
@@ -13,8 +13,11 @@ import {
   getAwsBedrockRegion,
   getAwsBedrockSecretAccessKey
 } from '@renderer/hooks/useAwsBedrock'
+import { getAssistantSettings } from '@renderer/services/AssistantService'
 import { estimateTextTokens } from '@renderer/services/TokenService'
 import {
+  Assistant,
+  EFFORT_RATIO,
   GenerateImageParams,
   MCPCallToolResponse,
   MCPTool,
@@ -23,7 +26,13 @@ import {
   Provider,
   ToolCallResponse
 } from '@renderer/types'
-import { ChunkType, MCPToolCreatedChunk, TextDeltaChunk } from '@renderer/types/chunk'
+import {
+  ChunkType,
+  MCPToolCreatedChunk,
+  TextDeltaChunk,
+  ThinkingDeltaChunk,
+  ThinkingStartChunk
+} from '@renderer/types/chunk'
 import { Message } from '@renderer/types/newMessage'
 import {
   AwsBedrockSdkInstance,
@@ -103,45 +112,66 @@ export class AwsBedrockAPIClient extends BaseApiClient<
   override async createCompletions(payload: AwsBedrockSdkParams): Promise<AwsBedrockSdkRawOutput> {
     const sdk = await this.getSdkInstance()
 
-    // 转换消息格式到AWS SDK原生格式
+    // 转换消息格式（用于 InvokeModelWithResponseStreamCommand）
     const awsMessages = payload.messages.map((msg) => ({
       role: msg.role,
       content: msg.content.map((content) => {
         if (content.text) {
-          return { text: content.text }
+          return { type: 'text', text: content.text }
         }
         if (content.image) {
+          // 处理图片数据，将 Uint8Array 或数字数组转换为 base64 字符串
+          let base64Data = ''
+          if (content.image.source.bytes) {
+            if (typeof content.image.source.bytes === 'string') {
+              // 如果已经是字符串，直接使用
+              base64Data = content.image.source.bytes
+            } else {
+              // 如果是数组或 Uint8Array，转换为 base64
+              const uint8Array = new Uint8Array(Object.values(content.image.source.bytes))
+              const binaryString = Array.from(uint8Array)
+                .map((byte) => String.fromCharCode(byte))
+                .join('')
+              base64Data = btoa(binaryString)
+            }
+          }
+
           return {
-            image: {
-              format: content.image.format,
-              source: content.image.source
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: `image/${content.image.format}`,
+              data: base64Data
             }
           }
         }
         if (content.toolResult) {
           return {
-            toolResult: {
-              toolUseId: content.toolResult.toolUseId,
-              content: content.toolResult.content,
-              status: content.toolResult.status
-            }
+            type: 'tool_result',
+            tool_use_id: content.toolResult.toolUseId,
+            content: content.toolResult.content
           }
         }
         if (content.toolUse) {
           return {
-            toolUse: {
-              toolUseId: content.toolUse.toolUseId,
-              name: content.toolUse.name,
-              input: content.toolUse.input
-            }
+            type: 'tool_use',
+            id: content.toolUse.toolUseId,
+            name: content.toolUse.name,
+            input: content.toolUse.input
           }
         }
-        // 返回符合AWS SDK ContentBlock类型的对象
-        return { text: 'Unknown content type' }
+        return { type: 'text', text: 'Unknown content type' }
       })
     }))
 
     logger.info('Creating completions with model ID:', { modelId: payload.modelId })
+
+    const additionalParams = Object.fromEntries(
+      Object.entries(payload).filter(
+        ([key]) =>
+          !['modelId', 'messages', 'system', 'maxTokens', 'temperature', 'topP', 'stream', 'tools'].includes(key)
+      )
+    )
 
     const commonParams = {
       modelId: payload.modelId,
@@ -157,15 +187,32 @@ export class AwsBedrockAPIClient extends BaseApiClient<
           ? {
               tools: payload.tools
             }
-          : undefined
+          : undefined,
+      ...additionalParams
     }
 
     try {
       if (payload.stream) {
-        const command = new ConverseStreamCommand(commonParams)
+        const requestBody = {
+          anthropic_version: 'bedrock-2023-05-31',
+          max_tokens: commonParams.inferenceConfig.maxTokens,
+          temperature: commonParams.inferenceConfig.temperature,
+          top_p: commonParams.inferenceConfig.topP,
+          messages: commonParams.messages,
+          ...(commonParams.system && commonParams.system[0]?.text ? { system: commonParams.system[0].text } : {}),
+          ...(commonParams.toolConfig?.tools ? { tools: commonParams.toolConfig.tools } : {}),
+          ...additionalParams
+        }
+
+        const command = new InvokeModelWithResponseStreamCommand({
+          modelId: commonParams.modelId,
+          body: JSON.stringify(requestBody),
+          contentType: 'application/json',
+          accept: 'application/json'
+        })
+
         const response = await sdk.client.send(command)
-        // 直接返回AWS Bedrock流式响应的异步迭代器
-        return this.createStreamIterator(response)
+        return this.createInvokeModelStreamIterator(response)
       } else {
         const command = new ConverseCommand(commonParams)
         const response = await sdk.client.send(command)
@@ -177,31 +224,39 @@ export class AwsBedrockAPIClient extends BaseApiClient<
     }
   }
 
-  private async *createStreamIterator(response: any): AsyncIterable<AwsBedrockSdkRawChunk> {
+  private async *createInvokeModelStreamIterator(response: any): AsyncIterable<AwsBedrockSdkRawChunk> {
     try {
-      if (response.stream) {
-        for await (const chunk of response.stream) {
-          logger.debug('AWS Bedrock chunk received:', chunk)
+      if (response.body) {
+        for await (const event of response.body) {
+          if (event.chunk) {
+            const chunk = JSON.parse(new TextDecoder().decode(event.chunk.bytes))
 
-          // AWS Bedrock的流式响应格式转换为标准格式
-          if (chunk.contentBlockDelta?.delta?.text) {
-            yield {
-              contentBlockDelta: {
-                delta: { text: chunk.contentBlockDelta.delta.text }
+            // 转换为标准格式
+            if (chunk.type === 'content_block_delta') {
+              yield {
+                contentBlockDelta: {
+                  delta: chunk.delta,
+                  contentBlockIndex: chunk.index
+                }
+              }
+            } else if (chunk.type === 'message_start') {
+              yield { messageStart: chunk }
+            } else if (chunk.type === 'message_stop') {
+              yield { messageStop: chunk }
+            } else if (chunk.type === 'content_block_start') {
+              yield {
+                contentBlockStart: {
+                  start: chunk.content_block,
+                  contentBlockIndex: chunk.index
+                }
+              }
+            } else if (chunk.type === 'content_block_stop') {
+              yield {
+                contentBlockStop: {
+                  contentBlockIndex: chunk.index
+                }
               }
             }
-          }
-
-          if (chunk.messageStart) {
-            yield { messageStart: chunk.messageStart }
-          }
-
-          if (chunk.messageStop) {
-            yield { messageStop: chunk.messageStop }
-          }
-
-          if (chunk.metadata) {
-            yield { metadata: chunk.metadata }
           }
         }
       }
@@ -485,6 +540,12 @@ export class AwsBedrockAPIClient extends BaseApiClient<
           }
         }
 
+        // 获取自定义参数
+        const customParams = this.getCustomParameters(assistant)
+
+        // 获取推理预算token
+        const budgetTokens = await this.getBudgetToken(assistant, model)
+
         const payload: AwsBedrockSdkParams = {
           modelId: model.id,
           messages:
@@ -497,9 +558,8 @@ export class AwsBedrockAPIClient extends BaseApiClient<
           topP: this.getTopP(assistant, model),
           stream: streamOutput !== false,
           tools: tools.length > 0 ? tools : undefined,
-          // 只在对话场景下应用自定义参数，避免影响翻译、总结等其他业务逻辑
-          // 注意：用户自定义参数总是应该覆盖其他参数
-          ...(coreRequest.callType === 'chat' ? this.getCustomParameters(assistant) : {})
+          ...(budgetTokens ? { thinking: { type: 'enabled', budget_tokens: budgetTokens } } : {}),
+          ...customParams
         }
 
         const timeout = this.getTimeout(model)
@@ -511,6 +571,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
   getResponseChunkTransformer(): ResponseChunkTransformer<AwsBedrockSdkRawChunk> {
     return () => {
       let hasStartedText = false
+      let hasStartedThinking = false
       let accumulatedJson = ''
       const toolCalls: Record<number, AwsBedrockSdkToolCall> = {}
 
@@ -568,6 +629,24 @@ export class AwsBedrockAPIClient extends BaseApiClient<
               type: ChunkType.TEXT_DELTA,
               text: rawChunk.contentBlockDelta.delta.text
             } as TextDeltaChunk)
+          }
+
+          // 处理thinking增量
+          if (
+            rawChunk.contentBlockDelta?.delta?.type === 'thinking_delta' &&
+            rawChunk.contentBlockDelta?.delta?.thinking
+          ) {
+            if (!hasStartedThinking) {
+              controller.enqueue({
+                type: ChunkType.THINKING_START
+              } as ThinkingStartChunk)
+              hasStartedThinking = true
+            }
+
+            controller.enqueue({
+              type: ChunkType.THINKING_DELTA,
+              text: rawChunk.contentBlockDelta.delta.thinking
+            } as ThinkingDeltaChunk)
           }
 
           // 处理内容块停止事件 - 参考 Anthropic 的 content_block_stop 处理
@@ -707,5 +786,46 @@ export class AwsBedrockAPIClient extends BaseApiClient<
 
   extractMessagesFromSdkPayload(sdkPayload: AwsBedrockSdkParams): AwsBedrockSdkMessageParam[] {
     return sdkPayload.messages || []
+  }
+
+  /**
+   * 获取 AWS Bedrock 的推理工作量预算token
+   * @param assistant - The assistant
+   * @param model - The model
+   * @returns The budget tokens for reasoning effort
+   */
+  private async getBudgetToken(assistant: Assistant, model: Model): Promise<number | undefined> {
+    try {
+      // 动态导入以避免循环依赖
+      const { findTokenLimit, isReasoningModel } = await import('@renderer/config/models')
+
+      if (!isReasoningModel(model)) {
+        return undefined
+      }
+      const { maxTokens } = getAssistantSettings(assistant)
+      const reasoningEffort = assistant?.settings?.reasoning_effort
+
+      if (reasoningEffort === undefined) {
+        return undefined
+      }
+
+      const effortRatio = EFFORT_RATIO[reasoningEffort]
+
+      const budgetTokens = Math.max(
+        1024,
+        Math.floor(
+          Math.min(
+            (findTokenLimit(model.id)?.max! - findTokenLimit(model.id)?.min!) * effortRatio +
+              findTokenLimit(model.id)?.min!,
+            (maxTokens || DEFAULT_MAX_TOKENS) * effortRatio
+          )
+        )
+      )
+
+      return budgetTokens
+    } catch (error) {
+      logger.warn('Failed to load models config for reasoning effort:', error as Error)
+      return undefined
+    }
   }
 }

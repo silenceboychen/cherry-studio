@@ -162,6 +162,7 @@ export interface AwsBedrockSdkParams {
   topP?: number
   stream?: boolean
   tools?: AwsBedrockSdkTool[]
+  [key: string]: any // Allow any additional custom parameters
 }
 
 export interface AwsBedrockSdkMessageParam {
@@ -222,6 +223,8 @@ export interface AwsBedrockSdkRawChunk {
       toolUse?: {
         input?: string
       }
+      type?: string // 支持 'thinking_delta' 等类型
+      thinking?: string // 支持 thinking 内容
     }
     contentBlockIndex?: number
   }
