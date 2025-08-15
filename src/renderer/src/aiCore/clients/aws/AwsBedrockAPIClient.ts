@@ -192,16 +192,8 @@ export class AwsBedrockAPIClient extends BaseApiClient<
 
     try {
       if (payload.stream) {
-        const requestBody = {
-          anthropic_version: 'bedrock-2023-05-31',
-          max_tokens: commonParams.inferenceConfig.maxTokens,
-          temperature: commonParams.inferenceConfig.temperature,
-          top_p: commonParams.inferenceConfig.topP,
-          messages: commonParams.messages,
-          ...(commonParams.system && commonParams.system[0]?.text ? { system: commonParams.system[0].text } : {}),
-          ...(commonParams.toolConfig?.tools ? { tools: commonParams.toolConfig.tools } : {}),
-          ...additionalParams
-        }
+        // 根据模型类型选择正确的 API 格式
+        const requestBody = this.createRequestBodyForModel(commonParams, additionalParams)
 
         const command = new InvokeModelWithResponseStreamCommand({
           modelId: commonParams.modelId,
@@ -221,6 +213,202 @@ export class AwsBedrockAPIClient extends BaseApiClient<
       logger.error('Failed to create completions with AWS Bedrock:', error as Error)
       throw error
     }
+  }
+
+  /**
+   * 根据模型类型创建请求体
+   */
+  private createRequestBodyForModel(commonParams: any, additionalParams: any): any {
+    const modelId = commonParams.modelId.toLowerCase()
+
+    // Claude 系列模型使用 Anthropic API 格式
+    if (modelId.includes('claude')) {
+      return {
+        anthropic_version: 'bedrock-2023-05-31',
+        max_tokens: commonParams.inferenceConfig.maxTokens,
+        temperature: commonParams.inferenceConfig.temperature,
+        top_p: commonParams.inferenceConfig.topP,
+        messages: commonParams.messages,
+        ...(commonParams.system && commonParams.system[0]?.text ? { system: commonParams.system[0].text } : {}),
+        ...(commonParams.toolConfig?.tools ? { tools: commonParams.toolConfig.tools } : {}),
+        ...additionalParams
+      }
+    }
+
+    // OpenAI 系列模型
+    if (modelId.includes('gpt') || modelId.includes('openai')) {
+      const messages: any[] = []
+
+      // 添加系统消息
+      if (commonParams.system && commonParams.system[0]?.text) {
+        messages.push({
+          role: 'system',
+          content: commonParams.system[0].text
+        })
+      }
+
+      // 转换消息格式
+      for (const message of commonParams.messages) {
+        const content: any[] = []
+        for (const part of message.content) {
+          if (part.text) {
+            content.push({ type: 'text', text: part.text })
+          } else if (part.image) {
+            content.push({
+              type: 'image_url',
+              image_url: {
+                url: `data:image/${part.image.format};base64,${part.image.source.bytes}`
+              }
+            })
+          }
+        }
+        messages.push({
+          role: message.role,
+          content: content.length === 1 && content[0].type === 'text' ? content[0].text : content
+        })
+      }
+
+      const baseBody: any = {
+        model: commonParams.modelId,
+        messages: messages,
+        max_tokens: commonParams.inferenceConfig.maxTokens,
+        temperature: commonParams.inferenceConfig.temperature,
+        top_p: commonParams.inferenceConfig.topP,
+        stream: true,
+        ...(commonParams.toolConfig?.tools ? { tools: commonParams.toolConfig.tools } : {})
+      }
+
+      // OpenAI 模型的 thinking 参数格式
+      if (additionalParams.reasoning_effort) {
+        baseBody.reasoning_effort = additionalParams.reasoning_effort
+        delete additionalParams.reasoning_effort
+      }
+
+      return {
+        ...baseBody,
+        ...additionalParams
+      }
+    }
+
+    // Llama 系列模型
+    if (modelId.includes('llama')) {
+      const baseBody: any = {
+        prompt: this.convertMessagesToPrompt(commonParams.messages, commonParams.system),
+        max_gen_len: commonParams.inferenceConfig.maxTokens,
+        temperature: commonParams.inferenceConfig.temperature,
+        top_p: commonParams.inferenceConfig.topP
+      }
+
+      // Llama 模型的 thinking 参数格式
+      if (additionalParams.thinking_mode) {
+        baseBody.thinking_mode = additionalParams.thinking_mode
+        delete additionalParams.thinking_mode
+      }
+
+      return {
+        ...baseBody,
+        ...additionalParams
+      }
+    }
+
+    // Amazon Titan 系列模型
+    if (modelId.includes('titan')) {
+      const textGenerationConfig: any = {
+        maxTokenCount: commonParams.inferenceConfig.maxTokens,
+        temperature: commonParams.inferenceConfig.temperature,
+        topP: commonParams.inferenceConfig.topP
+      }
+
+      // 将 thinking 相关参数添加到 textGenerationConfig 中
+      if (additionalParams.thinking) {
+        textGenerationConfig.thinking = additionalParams.thinking
+        delete additionalParams.thinking
+      }
+
+      return {
+        inputText: this.convertMessagesToPrompt(commonParams.messages, commonParams.system),
+        textGenerationConfig: {
+          ...textGenerationConfig,
+          ...Object.keys(additionalParams).reduce((acc, key) => {
+            if (['thinking_tokens', 'reasoning_mode'].includes(key)) {
+              acc[key] = additionalParams[key]
+              delete additionalParams[key]
+            }
+            return acc
+          }, {} as any)
+        },
+        ...additionalParams
+      }
+    }
+
+    // Cohere Command 系列模型
+    if (modelId.includes('cohere') || modelId.includes('command')) {
+      const baseBody: any = {
+        message: this.convertMessagesToPrompt(commonParams.messages, commonParams.system),
+        max_tokens: commonParams.inferenceConfig.maxTokens,
+        temperature: commonParams.inferenceConfig.temperature,
+        p: commonParams.inferenceConfig.topP
+      }
+
+      // Cohere 模型的 thinking 参数格式
+      if (additionalParams.thinking) {
+        baseBody.thinking = additionalParams.thinking
+        delete additionalParams.thinking
+      }
+      if (additionalParams.reasoning_tokens) {
+        baseBody.reasoning_tokens = additionalParams.reasoning_tokens
+        delete additionalParams.reasoning_tokens
+      }
+
+      return {
+        ...baseBody,
+        ...additionalParams
+      }
+    }
+
+    // 默认使用通用格式
+    const baseBody: any = {
+      prompt: this.convertMessagesToPrompt(commonParams.messages, commonParams.system),
+      max_tokens: commonParams.inferenceConfig.maxTokens,
+      temperature: commonParams.inferenceConfig.temperature,
+      top_p: commonParams.inferenceConfig.topP
+    }
+
+    return {
+      ...baseBody,
+      ...additionalParams
+    }
+  }
+
+  /**
+   * 将消息转换为简单的 prompt 格式
+   */
+  private convertMessagesToPrompt(messages: any[], system?: any[]): string {
+    let prompt = ''
+
+    // 添加系统消息
+    if (system && system[0]?.text) {
+      prompt += `System: ${system[0].text}\n\n`
+    }
+
+    // 添加对话消息
+    for (const message of messages) {
+      const role = message.role === 'assistant' ? 'Assistant' : 'Human'
+      let content = ''
+
+      for (const part of message.content) {
+        if (part.text) {
+          content += part.text
+        } else if (part.image) {
+          content += '[Image]'
+        }
+      }
+
+      prompt += `${role}: ${content}\n\n`
+    }
+
+    prompt += 'Assistant:'
+    return prompt
   }
 
   private async *createInvokeModelStreamIterator(response: any): AsyncIterable<AwsBedrockSdkRawChunk> {
@@ -539,8 +727,37 @@ export class AwsBedrockAPIClient extends BaseApiClient<
           }
         }
 
-        // 获取推理预算token
+        // 获取推理预算token（对所有支持推理的模型）
         const budgetTokens = this.getBudgetToken(assistant, model)
+
+        // 构建基础自定义参数
+        const customParams: Record<string, any> =
+          coreRequest.callType === 'chat' ? this.getCustomParameters(assistant) : {}
+
+        // 根据模型类型添加 thinking 参数
+        if (budgetTokens) {
+          const modelId = model.id.toLowerCase()
+
+          if (modelId.includes('claude')) {
+            // Claude 模型使用 Anthropic 格式
+            customParams.thinking = { type: 'enabled', budget_tokens: budgetTokens }
+          } else if (modelId.includes('gpt') || modelId.includes('openai')) {
+            // OpenAI 模型格式
+            customParams.reasoning_effort = assistant?.settings?.reasoning_effort
+          } else if (modelId.includes('llama')) {
+            // Llama 模型格式
+            customParams.thinking_mode = true
+            customParams.thinking_tokens = budgetTokens
+          } else if (modelId.includes('titan')) {
+            // Titan 模型格式
+            customParams.thinking = { enabled: true }
+            customParams.thinking_tokens = budgetTokens
+          } else if (modelId.includes('cohere') || modelId.includes('command')) {
+            // Cohere 模型格式
+            customParams.thinking = { enabled: true }
+            customParams.reasoning_tokens = budgetTokens
+          }
+        }
 
         const payload: AwsBedrockSdkParams = {
           modelId: model.id,
@@ -554,9 +771,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
           topP: this.getTopP(assistant, model),
           stream: streamOutput !== false,
           tools: tools.length > 0 ? tools : undefined,
-          ...(budgetTokens ? { thinking: { type: 'enabled', budget_tokens: budgetTokens } } : {}),
-          // 只在对话场景下应用自定义参数，避免影响翻译、总结等其他业务逻辑
-          ...(coreRequest.callType === 'chat' ? this.getCustomParameters(assistant) : {})
+          ...customParams
         }
 
         const timeout = this.getTimeout(model)
@@ -796,6 +1011,7 @@ export class AwsBedrockAPIClient extends BaseApiClient<
       if (!isReasoningModel(model)) {
         return undefined
       }
+
       const { maxTokens } = getAssistantSettings(assistant)
       const reasoningEffort = assistant?.settings?.reasoning_effort
 
@@ -804,21 +1020,27 @@ export class AwsBedrockAPIClient extends BaseApiClient<
       }
 
       const effortRatio = EFFORT_RATIO[reasoningEffort]
+      const tokenLimits = findTokenLimit(model.id)
 
-      const budgetTokens = Math.max(
-        1024,
-        Math.floor(
-          Math.min(
-            (findTokenLimit(model.id)?.max! - findTokenLimit(model.id)?.min!) * effortRatio +
-              findTokenLimit(model.id)?.min!,
-            (maxTokens || DEFAULT_MAX_TOKENS) * effortRatio
+      if (tokenLimits) {
+        // 使用模型特定的 token 限制
+        const budgetTokens = Math.max(
+          1024,
+          Math.floor(
+            Math.min(
+              (tokenLimits.max - tokenLimits.min) * effortRatio + tokenLimits.min,
+              (maxTokens || DEFAULT_MAX_TOKENS) * effortRatio
+            )
           )
         )
-      )
-
-      return budgetTokens
+        return budgetTokens
+      } else {
+        // 对于没有特定限制的模型，使用简化计算
+        const budgetTokens = Math.max(1024, Math.floor((maxTokens || DEFAULT_MAX_TOKENS) * effortRatio))
+        return budgetTokens
+      }
     } catch (error) {
-      logger.warn('Failed to load models config for reasoning effort:', error as Error)
+      logger.warn('Failed to calculate budget tokens for reasoning effort:', error as Error)
       return undefined
     }
   }
